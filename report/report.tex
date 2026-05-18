@@ -757,22 +757,543 @@ with open(filepath) as f:
 \chapter{Part 2 — Test \& Automate}
 % ════════════════════════════════════════════════════════════════════════════
 
+In this part, automated security testing tools are integrated into the development workflow. The goal is to detect vulnerabilities automatically and block insecure code from being merged via a CI/CD pipeline. All tools were run on \textbf{WSL (Ubuntu)} with Python 3.13.12.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Security Tools Overview}
+% ────────────────────────────────────────────────────────────────────────────
+
+Modern DevSecOps relies on a layered set of automated tools that run at different stages of the pipeline:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X l}
+\toprule
+\textbf{Tool} & \textbf{Category} & \textbf{Purpose} & \textbf{Stage} \\
+\midrule
+Bandit & SAST & Finds Python code vulnerabilities & Pre-commit \\
+Safety & SCA & Checks dependencies for CVEs & Pre-commit \\
+pytest & Security Tests & Validates security behavior & CI \\
+Gitleaks & Secret Scanning & Detects leaked credentials & Pre-commit \\
+OWASP ZAP & DAST & Dynamic vulnerability scanning & Post-deploy \\
+% Trivy & Container Scan & Scans Docker images for CVEs & CI \\
+GitHub Actions & CI/CD & Orchestrates all security gates & Pipeline \\
+\bottomrule
+\end{tabularx}
+\caption{Security tools used in Part 2}
+\end{table}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{SAST — Static Application Security Testing with Bandit}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is SAST?}
+
+Static Application Security Testing analyzes source code without executing it to find security vulnerabilities. Bandit is the standard Python SAST tool developed by PyCQA. It maps findings to CWE identifiers and severity levels.
+
+\subsection{Installation and Commands}
+
+\begin{lstlisting}[style=bashstyle, caption={Installing and running Bandit}]
+pip install bandit
+
+# Scan vulnerable app
+bandit -r part1/app_vulnerable.py
+
+# Scan secure app
+bandit -r part1/app_secure.py
+\end{lstlisting}
+
+\subsection{Results on app\_vulnerable.py}
+
+Bandit detected \textbf{8 issues} across the vulnerable application:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Issue ID} & \textbf{Severity} & \textbf{CWE} & \textbf{Description} \\
+\midrule
+B602 & \textcolor{accentred}{\textbf{HIGH}} & CWE-78 & \texttt{subprocess} call with \texttt{shell=True} \\
+B201 & \textcolor{accentred}{\textbf{HIGH}} & CWE-94 & Flask \texttt{debug=True} exposes Werkzeug debugger \\
+B608 & \textcolor{warnorange}{\textbf{MEDIUM}} & CWE-89 & SQL query built via string interpolation \\
+B301 & \textcolor{warnorange}{\textbf{MEDIUM}} & CWE-502 & \texttt{pickle.loads()} on untrusted data \\
+B104 & \textcolor{warnorange}{\textbf{MEDIUM}} & CWE-605 & Binding to all interfaces (\texttt{0.0.0.0}) \\
+B105 & Low & CWE-259 & Hardcoded password string in source \\
+B404 & Low & CWE-78 & Import of subprocess module \\
+B403 & Low & CWE-502 & Import of pickle module \\
+\bottomrule
+\end{tabularx}
+\caption{Bandit findings on app\_vulnerable.py — 2 HIGH, 3 MEDIUM, 3 LOW}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/vuln_bandit.png}
+  \caption{Bandit SAST scan on vulnerable application}
+\end{figure}
+
+\subsection{Results on app\_secure.py}
+
+After remediation, only \textbf{3 LOW severity} informational warnings remained:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Issue ID} & \textbf{Severity} & \textbf{CWE} & \textbf{Description} \\
+\midrule
+B404 & Low & CWE-78 & Import of subprocess (informational) \\
+B607 & Low & CWE-78 & Process started with partial executable path \\
+B603 & Low & CWE-78 & subprocess without \texttt{shell=True} (safe, informational) \\
+\bottomrule
+\end{tabularx}
+\caption{Bandit findings on app\_secure.py — 0 HIGH, 0 MEDIUM, 3 LOW}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/secure_bandit.png}
+  \caption{Bandit SAST scan on secure application}
+\end{figure}
+
+\subsection{Comparison Summary}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l c c c}
+\toprule
+\textbf{Severity} & \textbf{app\_vulnerable.py} & \textbf{app\_secure.py} & \textbf{Reduction} \\
+\midrule
+HIGH   & 2 & 0 & \textcolor{codegreen}{\textbf{100\%}} \\
+MEDIUM & 3 & 0 & \textcolor{codegreen}{\textbf{100\%}} \\
+LOW    & 3 & 3 & 0\% (informational only) \\
+\midrule
+\textbf{Total} & \textbf{8} & \textbf{3} & \textcolor{codegreen}{\textbf{62.5\%}} \\
+\bottomrule
+\end{tabular}
+\caption{Bandit results comparison}
+\end{table}
+
 \begin{infobox}
-\textbf{Note:} This chapter will be completed after finishing Part 2 of the lab. Sections covered: SAST with Bandit, SCA with Safety, Security Unit Testing with pytest, and CI/CD Pipeline with GitHub Actions.
+\textbf{Key finding:} The secure implementation eliminated 100\% of HIGH and MEDIUM severity findings. The 3 remaining LOW findings in \texttt{app\_secure.py} are informational — the subprocess usage is actually secure (list syntax, no \texttt{shell=True}).
 \end{infobox}
 
-\section{SAST — Static Application Security Testing}
-% Content to be added after completing Part 2
+% ────────────────────────────────────────────────────────────────────────────
+\section{SCA — Software Composition Analysis with Safety}
+% ────────────────────────────────────────────────────────────────────────────
 
-\section{SCA — Software Composition Analysis}
-% Content to be added after completing Part 2
+\textbf{What is SCA?}
 
-\section{Security Unit Testing}
-% Content to be added after completing Part 2
+Software Composition Analysis checks third-party dependencies against known vulnerability databases (CVE, NVD). Unlike SAST which analyzes your code, SCA analyzes your \texttt{requirements.txt} to find vulnerable library versions.
 
-\section{CI/CD Pipeline with Security Gates}
-% Content to be added after completing Part 2
+\subsection{Installation Problem and Fix}
 
+\begin{warningbox}
+\textbf{Problem encountered:} The latest version of Safety was incompatible with Python 3.13 on WSL, throwing an \texttt{AttributeError: module 'typer' has no attribute 'rich\_utils'} error.\\[4pt]
+\textbf{Fix:} Install a specific compatible version:
+\begin{lstlisting}[style=bashstyle]
+pip uninstall safety -y
+pip install "safety==2.3.5"
+\end{lstlisting}
+\end{warningbox}
+
+\subsection{Scan Results}
+
+\begin{lstlisting}[style=bashstyle, caption={Running Safety SCA scan}]
+safety check -r requirements.txt
+\end{lstlisting}
+
+Safety found \textbf{10 vulnerabilities} across 5 packages:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Package} & \textbf{CVE} & \textbf{Description} \\
+\midrule
+flask 3.0.3 & CVE-2026-27205 & Information disclosure via missing cache headers \\
+werkzeug 3.0.3 & CVE-2024-49766 & Path traversal on Windows — \texttt{safe\_join()} bypass \\
+werkzeug 3.0.3 & CVE-2024-49767 & Resource exhaustion via multipart form parsing \\
+werkzeug 3.0.3 & CVE-2026-27199 & DoS via Windows special device names \\
+werkzeug 3.0.3 & CVE-2025-66221 & DoS via Windows device names before 3.1.4 \\
+werkzeug 3.0.3 & CVE-2026-21860 & Improper handling of Windows reserved device names \\
+gunicorn 22.0.0 & PVE-2024-72809 & HTTP request smuggling via conflicting headers \\
+pytest 8.2.2 & CVE-2025-71176 & Local privilege escalation via predictable temp dir \\
+requests 2.32.3 & CVE-2024-47081 & \texttt{.netrc} credential leak via malformed URLs \\
+requests 2.32.3 & CVE-2026-25645 & Insecure temp file reuse in \texttt{extract\_zipped\_paths()} \\
+\bottomrule
+\end{tabularx}
+\caption{Safety SCA scan — 10 vulnerabilities in 5 packages}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/safety_scan.png}
+  \caption{Safety SCA scan results on requirements.txt}
+\end{figure}
+
+\subsection{Recommended Remediations}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l l l}
+\toprule
+\textbf{Package} & \textbf{Current} & \textbf{Recommended Fix} \\
+\midrule
+flask     & 3.0.3  & Upgrade to \texttt{>=3.1.3} \\
+werkzeug  & 3.0.3  & Upgrade to \texttt{>=3.1.6} \\
+gunicorn  & 22.0.0 & Upgrade to \texttt{>=23.0.0} \\
+pytest    & 8.2.2  & Upgrade to \texttt{>=9.0.3} \\
+requests  & 2.32.3 & Upgrade to \texttt{>=2.33.0} \\
+\bottomrule
+\end{tabular}
+\caption{Recommended dependency upgrades}
+\end{table}
+
+\begin{infobox}
+\textbf{Note:} The werkzeug CVEs related to Windows path traversal are particularly relevant since this lab was initially run on Windows before migrating to WSL. Even \texttt{safe\_join()} — used as a fix in \texttt{app\_secure.py} — has known vulnerabilities in specific OS/version combinations, reinforcing the need for regular dependency scanning.
+\end{infobox}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Security Unit Testing with pytest}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What are Security Tests?}
+
+Security unit tests are automated assertions that verify security-relevant behavior — what the application should \textit{NOT} do. Unlike functional tests, they assert that attacks are blocked.
+
+\subsection{Running the Test Suite}
+
+\begin{warningbox}
+\textbf{Problem encountered:} Running \texttt{pytest test\_security.py} from \texttt{part2/} failed with \texttt{ModuleNotFoundError: No module named 'app\_secure'} because \texttt{test\_security.py} imports from \texttt{app\_secure.py} which lives in \texttt{part1/}.\\[4pt]
+\textbf{Fix:} Set the Python path explicitly:
+\begin{lstlisting}[style=bashstyle]
+cd part2
+PYTHONPATH=../part1 pytest test_security.py -v
+\end{lstlisting}
+\end{warningbox}
+
+\subsection{Test Results}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l l}
+\toprule
+\textbf{Test} & \textbf{Description} & \textbf{Result} \\
+\midrule
+\texttt{test\_valid\_login\_succeeds} & Valid credentials return 200 & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_invalid\_login\_fails} & Wrong password returns 401 & \textcolor{accentred}{\textbf{FAILED*}} \\
+\texttt{test\_sql\_injection\_fails} & SQLi payload is rejected & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_invalid\_username\_format\_rejected} & Malformed username blocked & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_unauthenticated\_access\_redirects} & Protected routes redirect & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_xss\_payload\_escaped} & Script tags are HTML-escaped & \textcolor{accentred}{\textbf{FAILED*}} \\
+\texttt{test\_xss\_href\_injection} & javascript: URI is blocked & \textcolor{accentred}{\textbf{FAILED*}} \\
+\texttt{test\_api\_users\_requires\_auth} & API requires authentication & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_api\_users\_no\_passwords} & API never returns passwords & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_command\_injection\_blocked} & Injected commands are blocked & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_allowed\_host\_works} & Whitelisted hosts are allowed & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_json\_profile\_accepted} & Valid JSON profile accepted & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_unknown\_fields\_stripped} & Unknown fields are stripped & \textcolor{codegreen}{\textbf{PASSED}} \\
+\texttt{test\_no\_server\_header\_leak} & Server header not exposed & \textcolor{codegreen}{\textbf{PASSED}} \\
+\midrule
+\textbf{Total} & & \textbf{11 passed / 3 failed} \\
+\bottomrule
+\end{tabularx}
+\caption{Security test suite results}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{pictures/pytest.png}
+  \caption{Security unit test results}
+\end{figure}
+
+\subsection{Analysis of Failures}
+
+\begin{warningbox}
+\textbf{Root cause of 3 failures:} \texttt{jinja2.exceptions.TemplateNotFound: login.html} and \texttt{search.html}\\[4pt]
+The secure app correctly uses \texttt{render\_template()} instead of raw f-strings, but the \texttt{templates/} folder was not present when running tests from \texttt{part2/}. This is an \textbf{environment/path issue}, not a security regression.\\[4pt]
+\textbf{Fix:} Copy the templates folder to the test directory:
+\begin{lstlisting}[style=bashstyle]
+cp -r part1/templates part2/templates
+PYTHONPATH=../part1 pytest test_security.py -v
+\end{lstlisting}
+\textbf{Security impact:} None — the failures actually confirm that \texttt{render\_template()} is being used (the correct secure fix), rather than raw string responses.
+\end{warningbox}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Secret Scanning with Gitleaks}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is Secret Scanning?}
+
+Gitleaks scans the entire git repository — including commit history — for accidentally leaked secrets like API keys, passwords, and tokens. Even deleted secrets remain in git history and can be found.
+
+\subsection{Installation and Commands}
+
+\begin{lstlisting}[style=bashstyle, caption={Installing and running Gitleaks}]
+wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/\
+gitleaks_8.18.4_linux_x64.tar.gz
+tar -xzf gitleaks_8.18.4_linux_x64.tar.gz
+
+# Scan git history
+./gitleaks detect --source . --verbose
+
+# Scan files directly (no git required)
+./gitleaks detect --source . --no-git --verbose
+\end{lstlisting}
+
+\subsection{Scan Results and False Positives}
+
+\begin{warningbox}
+\textbf{Problem encountered:} The initial scan with \texttt{--verbose} (without \texttt{--no-git}) returned \texttt{no leaks found} because \texttt{app\_vulnerable.py} had not been committed yet with the hardcoded secret.\\[4pt]
+\textbf{Fix:} Run with full git history after committing:
+\begin{lstlisting}[style=bashstyle]
+./gitleaks detect --source . --verbose
+\end{lstlisting}
+\end{warningbox}
+
+Gitleaks found \textbf{4 secrets} in the repository:
+
+\begin{lstlisting}[style=bashstyle, caption={Gitleaks output}]
+Finding: aws_secret="AKIAIMNOJVGFDXXXE4OA"
+RuleID:  aws-access-token
+File:    README.md  (Lines 221, 223, 259)
+
+Finding: cafebabe:deadbeef
+RuleID:  sidekiq-secret
+File:    README.md  (Line 42)
+
+4 commits scanned — leaks found: 4
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{pictures/gitleaks.png}
+  \caption{Gitleaks secret scanning results}
+\end{figure}
+
+\begin{infobox}
+\textbf{False Positives:} All 4 findings are intentional example credentials in the Gitleaks \texttt{README.md} documentation file — not real secrets. This demonstrates that secret scanning tools require tuning to suppress known safe patterns.\\[4pt]
+\textbf{Fix — create a \texttt{.gitleaks.toml} allowlist:}
+\begin{lstlisting}[style=bashstyle]
+cat > .gitleaks.toml << 'EOF'
+[allowlist]
+  description = "Allowlist for README examples"
+  paths = ["README.md"]
+EOF
+\end{lstlisting}
+This suppresses false positives while keeping detection active for real secrets.
+\end{infobox}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{DAST — Dynamic Application Security Testing with OWASP ZAP}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is DAST?}
+
+Dynamic Application Security Testing attacks the \textit{running} application automatically, just like a real attacker. Unlike SAST (reads code) and SCA (reads dependencies), ZAP sends real HTTP requests with malicious payloads and reports what works.
+
+\subsection{Installation and Setup}
+
+ZAP was run via Docker to avoid complex installation:
+
+\begin{lstlisting}[style=bashstyle, caption={Pulling and running OWASP ZAP}]
+docker pull ghcr.io/zaproxy/zaproxy:stable
+
+# Run baseline scan against vulnerable app
+docker run --rm ghcr.io/zaproxy/zaproxy:stable \
+  zap-baseline.py \
+  -t http://172.22.159.173:5000 \
+  -l WARN
+\end{lstlisting}
+
+\begin{warningbox}
+\textbf{Problem encountered:} ZAP running inside Docker could not reach the Flask app on \texttt{127.0.0.1} because that refers to the Docker container's own localhost, not the WSL host.\\[4pt]
+\textbf{Fix:} Use the WSL IP address instead of \texttt{127.0.0.1}:
+\begin{lstlisting}[style=bashstyle]
+# Get WSL IP
+hostname -I
+# Use the returned IP (e.g. 172.22.159.173) in ZAP target URL
+\end{lstlisting}
+\textbf{Additional fix for secure app:} \texttt{app\_secure.py} binds to \texttt{127.0.0.1} by default. Temporarily change to \texttt{0.0.0.0} to allow Docker to reach it:
+\begin{lstlisting}[style=bashstyle]
+sed -i 's/host="127.0.0.1"/host="0.0.0.0"/' part1/app_secure.py
+# Revert after scanning
+sed -i 's/host="0.0.0.0"/host="127.0.0.1"/' part1/app_secure.py
+\end{lstlisting}
+\end{warningbox}
+
+\subsection{Results — Vulnerable App (port 5000)}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Finding} & \textbf{Risk} & \textbf{Attack Enabled} \\
+\midrule
+Missing Anti-clickjacking Header & Medium & Clickjacking via iframe embedding \\
+X-Content-Type-Options Missing & Low & MIME sniffing attacks \\
+Server Version Leak & Low & Reveals Werkzeug version for targeted exploits \\
+CSP Header Not Set & Medium & No browser-level XSS defense \\
+Permissions Policy Missing & Low & No control over browser features \\
+CORP Header Missing & Low & Cross-origin resource access \\
+\midrule
+\textbf{Total} & & \textbf{6 warnings, 0 failures, 60 passes} \\
+\bottomrule
+\end{tabularx}
+\caption{ZAP baseline scan on vulnerable app}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{pictures/zap_vuln.png}
+  \caption{OWASP ZAP DAST scan on vulnerable application}
+\end{figure}
+
+\subsection{Results — Secure App (port 5001)}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Finding} & \textbf{Risk} & \textbf{Notes} \\
+\midrule
+Missing Anti-clickjacking Header & Medium & Reduced from 4 to 2 instances \\
+X-Content-Type-Options Missing & Low & Reduced from 4 to 2 instances \\
+Server Version Leak & Low & Still present \\
+CSP Header Not Set & Medium & To be fixed in Part 3 \\
+Permissions Policy Missing & Low & To be fixed in Part 3 \\
+CORP Header Missing & Low & To be fixed in Part 3 \\
+Debug Error Messages & Info & \textbf{New:} /login returns 500 (missing templates) \\
+Application Error Disclosure & Info & \textbf{New:} Same cause — environment issue \\
+\midrule
+\textbf{Total} & & \textbf{8 warnings, 0 failures, 58 passes} \\
+\bottomrule
+\end{tabularx}
+\caption{ZAP baseline scan on secure app}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/zap_secure.png}
+  \caption{OWASP ZAP DAST scan on secure application}
+\end{figure}
+
+\begin{infobox}
+\textbf{Why did the secure app get more warnings?} The 2 new warnings (\texttt{Debug Error Messages} and \texttt{Application Error Disclosure}) were caused by the \texttt{/login} endpoint returning a 500 error due to the missing \texttt{login.html} template in the test environment — not a real security issue. In production with templates present, these warnings would disappear. The remaining header-related warnings are addressed in Part 3 via \texttt{security\_monitoring.py}.\\[4pt]
+\textbf{Note on ZAP limitations:} The baseline scan (\texttt{zap-baseline.py}) performs passive analysis only. It did not detect SQL injection or XSS because those endpoints require authentication or specific parameters. A full active scan (\texttt{zap-full-scan.py}) would detect these but takes significantly longer.
+\end{infobox}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{CI/CD Pipeline with GitHub Actions}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is a Security Gate?}
+
+A security gate is an automated check in the CI/CD pipeline that blocks a pull request if a security condition is not met. This enforces that insecure code can never reach production.
+
+\subsection{Pipeline Jobs Overview}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X l}
+\toprule
+\textbf{Job} & \textbf{Tool} & \textbf{Purpose} & \textbf{Gate} \\
+\midrule
+SAST & Bandit & Scan Python code & Block if HIGH severity \\
+SCA & Safety & Check dependencies & Block if critical CVE \\
+Security Tests & pytest & Validate security behavior & Block if tests fail \\
+Secret Scan & Gitleaks & Detect leaked credentials & Block if secret found \\
+Container Scan & Trivy & Scan Docker image & Advisory only \\
+DAST & OWASP ZAP & Dynamic scanning & Advisory only \\
+Security Gate & Aggregator & Final merge check & Block if any job failed \\
+\bottomrule
+\end{tabularx}
+\caption{CI/CD pipeline security gates}
+\end{table}
+
+\subsection{Problems Encountered and Fixes}
+
+\begin{warningbox}
+\textbf{Problem 1 — Invalid workflow syntax:}
+The original \texttt{devsecops-pipeline.yml} used \texttt{hashFiles()} in a job-level \texttt{if:} condition, which is not supported by GitHub Actions:
+\begin{lstlisting}[style=bashstyle]
+# INVALID
+if: hashFiles('Dockerfile') != ''
+
+# FIX
+if: true
+\end{lstlisting}
+\end{warningbox}
+
+\begin{warningbox}
+\textbf{Problem 2 — Wrong file paths:}
+The original pipeline referenced \texttt{code/session1/} and \texttt{code/session2/} paths that do not exist in the cloned repository. All paths were updated to match the actual structure:
+\begin{lstlisting}[style=bashstyle]
+# ORIGINAL (wrong)
+bandit -r code/session1/app_secure.py
+safety check -r code/session1/requirements.txt
+pytest code/session2/test_security.py
+
+# FIXED
+bandit -r app.py          # scans root app.py
+safety check -r requirements.txt
+PYTHONPATH=../part1 pytest part2/test_security.py
+\end{lstlisting}
+\end{warningbox}
+
+\begin{warningbox}
+\textbf{Problem 3 — Pipeline scanning \texttt{part1/app\_vulnerable.py}:}
+Since the vulnerable app exists in \texttt{part1/}, Bandit would always find HIGH severity issues regardless of which branch was being tested.\\[4pt]
+\textbf{Fix:} The pipeline was configured to scan only \texttt{app.py} at the repository root. Each branch places a different version there:
+\begin{lstlisting}[style=bashstyle]
+# insecure-app branch
+cp part1/app_vulnerable.py app.py   # Pipeline FAILS
+
+# main branch
+cp part1/app_secure.py app.py       # Pipeline PASSES
+\end{lstlisting}
+\end{warningbox}
+
+\subsection{Pipeline Execution Results}
+
+\textbf{insecure-app branch — pipeline correctly fails:}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{pictures/vuln_CI.png}
+  \caption{Pipeline failing on insecure-app branch}
+\end{figure}
+
+\textbf{main branch (secure app) — more jobs pass:}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/secure_CI.png}
+  \caption{Pipeline on main branch with secure app}
+\end{figure}
+
+\textbf{Pull Request — security gate blocking merge:}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/merge_blocked.png}
+  \caption{Security gate blocking merge of insecure branch via Pull Request}
+\end{figure}
+
+\begin{infobox}
+\textbf{Remaining pipeline failures on main branch:}\\
+\textbf{Secret Scanning} still fails because the fake AWS credentials in \texttt{README.md} are detected by Gitleaks. These are intentional examples from the Gitleaks documentation. Fix: add a \texttt{.gitleaks.toml} allowlist file.\\[4pt]
+\textbf{Container Security Scan} fails because the \texttt{Dockerfile} is in \texttt{part3/} not at the root. Fix: either move it or update the pipeline path.\\[4pt]
+These are known infrastructure issues, not security vulnerabilities in the application.
+\end{infobox}
+
+\subsection{Key Principle — Shift-Left Security}
+
+\begin{infobox}
+The pipeline implements \textbf{shift-left security} — vulnerabilities are caught at commit time, before code reaches staging or production. Each security gate is a hard block: if Bandit finds a HIGH severity issue or Gitleaks finds a secret, the pull request cannot be merged until the issue is resolved. This transforms security from a final gate into a continuous practice embedded in every development cycle.
+\end{infobox}
 % ════════════════════════════════════════════════════════════════════════════
 \chapter{Part 3 — Harden \& Monitor}
 % ════════════════════════════════════════════════════════════════════════════
