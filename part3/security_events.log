@@ -1,0 +1,140 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║          INCIDENT RESPONSE RUNBOOK - Quick Reference         ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  P1 - CRITICAL (Active Breach)                               ║
+║    1. Isolate: Block attacker IP at load balancer            ║
+║    2. Preserve: Snapshot logs to immutable storage           ║
+║    3. Contain: Rotate all secrets & API keys immediately     ║
+║    4. Notify: Security team + management within 15 minutes   ║
+║    5. Escalate: CIRT/legal if PII or customer data affected  ║
+║                                                              ║
+║  P2 - HIGH (WAF/Rate Limit Triggered)                        ║
+║    1. Investigate: Review security event logs                ║
+║    2. Correlate: Check other IPs from same /24 subnet        ║
+║    3. Decide: Temp block or permanent ban                    ║
+║    4. Document: Create ticket with IOCs                      ║
+║                                                              ║
+║  P3 - MEDIUM (Anomalous Traffic)                             ║
+║    1. Monitor: Increase logging verbosity                    ║
+║    2. Analyze: Check for reconnaissance patterns             ║
+║    3. Alert: Notify on-call engineer                         ║
+║                                                              ║
+║  Useful Commands:                                            ║
+║    Block IP:  iptables -I INPUT -s <IP> -j DROP              ║
+║    Log check: journalctl -u flask-app -f                     ║
+║    Rotate key: export SECRET_KEY=$(python -c                 ║
+║                "import secrets; print(secrets.token_hex())") ║
+╚══════════════════════════════════════════════════════════════╝
+
+🛡️  Security monitoring active on http://127.0.0.1:5002
+   Try: curl 'http://127.0.0.1:5002/api/demo?q=<script>alert(1)</script>'
+   Try: curl 'http://127.0.0.1:5002/api/demo?q=' OR 1=1--'
+ * Serving Flask app 'security_monitoring'
+ * Debug mode: off
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5002
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+/mnt/c/Users/ELECTRO-RIMO/Desktop/bureau/9raya/DevSecOps/webSecurity/dev-sec-ops-lab-1/part3/security_monitoring.py:27: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  self.timestamp = datetime.utcnow().isoformat() + "Z"
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.716761Z", "request_id": "a90b10fa379b", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.741814Z", "request_id": "f65e083cc2ab", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.760351Z", "request_id": "8253ec10ea5d", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.777892Z", "request_id": "d55bc7fec08e", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.797650Z", "request_id": "80183c44b084", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.821627Z", "request_id": "0171d454d0bf", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.842272Z", "request_id": "6f7157021265", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.861875Z", "request_id": "b03ef95b689f", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.880802Z", "request_id": "6eda3f73850d", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.898370Z", "request_id": "a54c7460cd64", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.917701Z", "request_id": "7e24c88609a3", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.937445Z", "request_id": "c9272b1c363a", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.957032Z", "request_id": "1e8a3d73b76b", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.974352Z", "request_id": "4d83e919290a", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:33.991618Z", "request_id": "f1af9344e31f", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:33] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.009963Z", "request_id": "5792f2f3a4a9", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.026665Z", "request_id": "d0579ba9c829", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.043168Z", "request_id": "be088b0e1dc7", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.062103Z", "request_id": "8fe4d5c74ef2", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.084280Z", "request_id": "151ee8b0b1ca", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.100134Z", "request_id": "8af24bc43a0a", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.120107Z", "request_id": "8c0fa4bd118d", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.136924Z", "request_id": "a263938336c9", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.152695Z", "request_id": "ee20b189aff1", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.167867Z", "request_id": "4cb742639967", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.182905Z", "request_id": "b36c1828416d", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.197347Z", "request_id": "3824e0fe64d5", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.213038Z", "request_id": "666c21d67dfd", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.228223Z", "request_id": "4b51e68d6a17", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.242397Z", "request_id": "944761eea589", "event_type": "WAF_BLOCK", "severity": "HIGH", "source_ip": "203.0.113.42", "details": {"rule": "WAF-001", "rule_name": "SQL Injection", "path": "/login", "method": "GET"}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 400 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.257292Z", "request_id": "83bd35b69a0f", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.272801Z", "request_id": "5767d85ac173", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.287252Z", "request_id": "6b600aa0aa9c", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.303050Z", "request_id": "e89c05b8d45b", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.317720Z", "request_id": "82366446fccb", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.333264Z", "request_id": "ac47ae08fd8d", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.349174Z", "request_id": "8429b28eceea", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.362928Z", "request_id": "371a05d1becc", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.378014Z", "request_id": "da1bd8b013ec", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.394311Z", "request_id": "ff24ac7af266", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.409004Z", "request_id": "efe43cb79c6c", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.423448Z", "request_id": "aa498b0c5fe2", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.438099Z", "request_id": "fdc8b108ff26", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.452804Z", "request_id": "ebd7baf3af5e", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.468258Z", "request_id": "ebf75bb12076", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.482967Z", "request_id": "03c7c35b107d", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.497469Z", "request_id": "a6d9566a4756", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.513818Z", "request_id": "ecfb2affa1d6", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.529739Z", "request_id": "e59f24630f9a", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -
+WARNING:security_monitor:{"timestamp": "2026-05-23T16:52:34.546244Z", "request_id": "b7ae6e4b1cb0", "event_type": "RATE_LIMIT_EXCEEDED", "severity": "MEDIUM", "source_ip": "203.0.113.42", "details": {"path": "/login", "count": 30}}
+INFO:werkzeug:127.0.0.1 - - [23/May/2026 17:52:34] "[31m[1mGET /login?username=admin'+OR+'1'%3D'1&password=x HTTP/1.1[0m" 429 -

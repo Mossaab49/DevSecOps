@@ -1,0 +1,52 @@
+════════════════════════════════════════════════════════
+         INCIDENT RESPONSE REPORT — P1
+════════════════════════════════════════════════════════
+
+INCIDENT ID:    IR-2026-001
+DATE:           2026-05-23
+SEVERITY:       P1 — HIGH
+STATUS:         RESOLVED
+
+════════════════════════════════════════════════════════
+1. INCIDENT TIMELINE
+════════════════════════════════════════════════════════
+16:52:33Z — First WAF_BLOCK detected from 203.0.113.42
+16:52:34Z — 30 SQL injection attempts blocked by WAF
+16:52:34Z — Automated rate limiting triggered (429)
+16:53:00Z — IP blocked at iptables level
+16:53:10Z — SECRET_KEY rotated as precaution
+
+════════════════════════════════════════════════════════
+2. INDICATORS OF COMPROMISE (IOCs)
+════════════════════════════════════════════════════════
+Attacker IP:    203.0.113.42
+Target:         /login endpoint
+Attack type:    SQL Injection (WAF-001)
+Payload:        admin' OR '1'='1
+Total attempts: 30 in < 2 seconds (automated)
+Rule triggered: WAF-001 SQL Injection
+
+════════════════════════════════════════════════════════
+3. ACTIONS TAKEN
+════════════════════════════════════════════════════════
+[x] Attacker IP identified from structured WAF logs
+[x] IP blocked: sudo iptables -I INPUT -s 203.0.113.42 -j DROP
+[x] SECRET_KEY rotated: secrets.token_hex(32)
+[x] Incident documented
+
+════════════════════════════════════════════════════════
+4. POST-MORTEM RECOMMENDATIONS
+════════════════════════════════════════════════════════
+R1. Implement automatic IP blocking after 10 WAF_BLOCK 
+    events from same IP within 60 seconds
+R2. Integrate WAF logs with SIEM (Splunk/Elastic) for 
+    real-time alerting
+R3. Add CAPTCHA to /login endpoint to prevent automation
+R4. Implement account lockout after 5 failed attempts
+R5. Deploy IP reputation service to block known malicious
+    IPs proactively
+R6. Store SECRET_KEY in vault (HashiCorp Vault / AWS SSM)
+    never in environment variables
+R7. Enable fail2ban to automate IP blocking based on
+    WAF log patterns
+════════════════════════════════════════════════════════

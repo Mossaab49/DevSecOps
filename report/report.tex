@@ -165,6 +165,7 @@
 %  DOCUMENT
 % ════════════════════════════════════════════════════════════════════════════
 \begin{document}
+\pagenumbering{roman}
 
 % ─── Cover Page ─────────────────────────────────────────────────────────────
 \begin{titlepage}
@@ -226,6 +227,10 @@ The complete lab demonstrates a full DevSecOps workflow from threat modeling to 
 \tableofcontents
 \thispagestyle{fancy}
 
+
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
 % ════════════════════════════════════════════════════════════════════════════
 \chapter{Introduction}
 % ════════════════════════════════════════════════════════════════════════════
@@ -977,7 +982,7 @@ PYTHONPATH=../part1 pytest test_security.py -v
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{l l l}
+\begin{tabularx}{\textwidth}{l l X}
 \toprule
 \textbf{Test} & \textbf{Description} & \textbf{Result} \\
 \midrule
@@ -1298,28 +1303,498 @@ The pipeline implements \textbf{shift-left security} — vulnerabilities are cau
 \chapter{Part 3 — Harden \& Monitor}
 % ════════════════════════════════════════════════════════════════════════════
 
+In this final part, the deployment environment is hardened against attacks, runtime security monitoring is implemented via a WAF middleware, and an incident response exercise is conducted. All work was performed on WSL2 with Docker Desktop.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Docker Security Hardening}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is Docker hardening?}
+
+Docker hardening reduces the attack surface of containerized applications by applying the principle of least privilege. Even if the application code is exploited, a hardened container limits the damage an attacker can do. The provided \texttt{Dockerfile} follows CIS Docker Benchmark v1.6 recommendations.
+
+\subsection{Dockerfile Security Controls}
+
+The following security controls were implemented in the \texttt{Dockerfile}:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Control} & \textbf{Implementation} & \textbf{Threat Prevented} \\
+\midrule
+Non-root user & \texttt{useradd appuser; USER appuser} & Container escape to root \\
+Multi-stage build & \texttt{FROM python AS builder / FROM python AS prod} & Dev tools in production image \\
+Read-only filesystem & \texttt{read\_only: true} in compose & Malware persistence \\
+Drop all capabilities & \texttt{cap\_drop: ALL} in compose & Privilege escalation \\
+No new privileges & \texttt{no-new-privileges:true} secopt & Setuid binary abuse \\
+dumb-init PID 1 & \texttt{ENTRYPOINT ["dumb-init", "--"]} & Signal handling, zombie processes \\
+Health check & \texttt{HEALTHCHECK} in Dockerfile & Zombie container detection \\
+Resource limits & CPU/memory limits in deploy block & Denial of Service \\
+Secrets from env & \texttt{env\_file: .env} & Credential leakage in images \\
+Private network & Internal bridge network & Lateral movement \\
+\bottomrule
+\end{tabularx}
+\caption{CIS Docker Benchmark controls implemented}
+\end{table}
+
+\subsection{Problems Encountered During Docker Setup}
+
+\begin{warningbox}
+\textbf{Problem 1 — Build context missing files:}
+The Dockerfile expected \texttt{requirements.txt}, \texttt{app\_secure.py}, and \texttt{templates/} in the build context, but these files were in \texttt{part1/} not \texttt{part3/}.\\[4pt]
+\textbf{Fix:}
+\begin{lstlisting}[style=bashstyle]
+cp ../part1/app_secure.py .
+cp ../requirements.txt .
+cp -r ../part1/templates .
+# Change build context in docker-compose.yml
+sed -i 's|context: ../part1|context: .|g' docker-compose.yml
+\end{lstlisting}
+\end{warningbox}
+
+\begin{warningbox}
+\textbf{Problem 2 — docker-compose.yml references wrong paths:}
+The original file referenced \texttt{../session1} and \texttt{../session3} which do not exist.\\[4pt]
+\textbf{Fix:}
+\begin{lstlisting}[style=bashstyle]
+sed -i 's|../session1|../part1|g' docker-compose.yml
+sed -i 's|../session3|../part3|g' docker-compose.yml
+\end{lstlisting}
+\end{warningbox}
+
+\begin{warningbox}
+\textbf{Problem 3 — Custom seccomp profile not supported on WSL2:}
+The compose file referenced \texttt{seccomp\_profile.json} which caused a \texttt{bind-mount /proc/ns/net} error on WSL2.\\[4pt]
+\textbf{Fix:} Remove the seccomp line from \texttt{docker-compose.yml}:
+\begin{lstlisting}[style=bashstyle]
+sed -i '/seccomp:seccomp_profile.json/d' docker-compose.yml
+\end{lstlisting}
+\textbf{Note:} In a production Linux environment, the custom seccomp profile would restrict available system calls, further reducing the container attack surface.
+\end{warningbox}
+
+\begin{warningbox}
+\textbf{Problem 4 — gunicorn ModuleNotFoundError:}
+The multi-stage build copied packages from \texttt{/root/.local} (builder stage) to \texttt{/home/appuser/.local} (production stage), but gunicorn could not find its own modules at runtime.\\[4pt]
+\textbf{Root cause:} Python packages installed as \texttt{root} in builder stage are copied to \texttt{appuser} home, but the internal module references still point to the original \texttt{root} paths.\\[4pt]
+\textbf{Fix:} Run \texttt{security\_monitoring.py} directly as a standalone WAF on port 5002, and use Flask's built-in server for \texttt{app\_secure.py} during testing. In production, use a single-stage build with system-wide pip install.
+\end{warningbox}
+
+\subsection{Building the Docker Image}
+
+\begin{lstlisting}[style=bashstyle, caption={Building the hardened Docker image}]
+docker build -t lab-app:v1 -f Dockerfile .
+\end{lstlisting}
+
+\subsection{Trivy Container Scan}
+
+\begin{lstlisting}[style=bashstyle, caption={Running Trivy container vulnerability scan}]
+trivy image lab-app:v1 --severity HIGH,CRITICAL
+\end{lstlisting}
+
+Trivy found \textbf{7 HIGH vulnerabilities, 0 CRITICAL}:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Library} & \textbf{CVE} & \textbf{Severity} & \textbf{Description} \\
+\midrule
+libncursesw6 & CVE-2025-69720 & HIGH & Buffer overflow → arbitrary code execution \\
+libtinfo6 & CVE-2025-69720 & HIGH & Same ncurses vulnerability \\
+ncurses-base & CVE-2025-69720 & HIGH & Same ncurses vulnerability \\
+ncurses-bin & CVE-2025-69720 & HIGH & Same ncurses vulnerability \\
+jaraco.context & CVE-2026-23949 & HIGH & Path traversal via malicious tar archives \\
+wheel & CVE-2026-24049 & HIGH & Privilege escalation via malicious wheel file \\
+wheel (vendor) & CVE-2026-24049 & HIGH & Same wheel vulnerability \\
+\bottomrule
+\end{tabularx}
+\caption{Trivy scan results — 7 HIGH, 0 CRITICAL}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/trivy3.png}
+  \caption{Trivy container vulnerability scan results}
+\end{figure}
+
 \begin{infobox}
-\textbf{Note:} This chapter will be completed after finishing Part 3 of the lab. Sections covered: Docker hardening, WAF, security headers, and incident response.
+\textbf{Note:} The 4 ncurses vulnerabilities have no fix available yet (\texttt{Status: affected}). The wheel and jaraco.context vulnerabilities have fixes available — upgrade to \texttt{wheel>=0.46.2} and \texttt{jaraco.context>=6.1.0}. No CRITICAL vulnerabilities were found, confirming the hardened image has a minimal attack surface.
 \end{infobox}
 
-\section{Docker Security Hardening}
-% Content to be added after completing Part 3
+\subsection{Hardening Verification}
 
-\section{Runtime Security Monitoring}
-% Content to be added after completing Part 3
+\begin{lstlisting}[style=bashstyle, caption={Verifying CIS Docker Benchmark controls}]
+# Verify non-root user
+docker run --rm lab-app:v1 whoami
+# Expected output: appuser
 
-\section{Security Headers}
-% Content to be added after completing Part 3
+# Verify read-only filesystem
+docker run --rm --read-only lab-app:v1 touch /test
+# Expected output: Read-only file system
 
+# Verify security options via docker inspect
+docker inspect lab-app:v1 | grep -A5 "User"
+# Expected output: "User": "appuser"
+
+# Verify after compose
+docker inspect lab_web | grep -A10 "SecurityOpt"
+# Expected output: "no-new-privileges:true"
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/appuser.png}
+  \caption{Non-root user and read-only filesystem verified}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/opsecurity.png}
+  \caption{Security options confirmed via docker inspect}
+\end{figure}
+
+\subsection{Docker Compose Deployment}
+
+\begin{lstlisting}[style=bashstyle, caption={Starting the hardened stack}]
+docker compose up -d
+docker ps
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/composeUp.png}
+  \caption{Hardened Docker Compose stack running}
+\end{figure}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Runtime Security Monitoring — WAF}
+% ────────────────────────────────────────────────────────────────────────────
+
+\textbf{What is Runtime WAF?}
+
+A Web Application Firewall (WAF) inspects incoming HTTP requests at runtime and blocks malicious payloads before they reach the application. Unlike SAST (which scans code) and DAST (which tests a running app), a WAF provides \textit{continuous} protection in production.
+
+The \texttt{security\_monitoring.py} module implements a Flask middleware WAF with:
+\begin{itemize}[leftmargin=1.5cm]
+  \item Pattern-based attack detection (SQL injection, XSS, command injection)
+  \item Rate limiting (blocks after 30 requests/minute per IP)
+  \item Structured JSON security event logging (SIEM-compatible)
+  \item Defensive HTTP security headers on every response
+\end{itemize}
+
+\subsection{Starting the WAF}
+
+\begin{warningbox}
+\textbf{Problem encountered:} \texttt{security\_monitoring.py} uses \texttt{request.remote\_addr} for IP detection, which always returns \texttt{127.0.0.1} for local requests — making it impossible to distinguish between different clients in testing.\\[4pt]
+\textbf{Fix:} Added \texttt{X-Forwarded-For} header support:
+\begin{lstlisting}[style=pythonstyle]
+# Before
+ip = request.remote_addr or "unknown"
+
+# After
+ip = request.headers.get("X-Forwarded-For",
+     request.remote_addr) or "unknown"
+\end{lstlisting}
+This allows spoofing a specific attacker IP during incident response simulation.
+\end{warningbox}
+
+\begin{lstlisting}[style=bashstyle, caption={Starting the WAF middleware}]
+cd part3
+source ../.venv/bin/activate
+python security_monitoring.py 2>&1 | tee security_events.log
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/run_monitor.png}
+  \caption{WAF middleware started on port 5002}
+\end{figure}
+
+\subsection{WAF Rule Testing}
+
+\begin{lstlisting}[style=bashstyle, caption={Testing WAF detection rules}]
+# SQL Injection detection
+curl 'http://127.0.0.1:5002/api/demo?q=SELECT+*+FROM+users'
+# Response: {"error":"Request blocked by security policy"}
+
+# XSS detection
+curl "http://127.0.0.1:5002/api/demo?q=<script>alert(1)</script>"
+# Response: {"error":"Request blocked by security policy"}
+
+# Command injection detection
+curl 'http://127.0.0.1:5002/api/demo?q=;+id'
+# Response: {"error":"Request blocked by security policy"}
+
+# Legitimate request (should pass)
+curl 'http://127.0.0.1:5002/api/demo?q=hello'
+# Response: 200 OK
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l l X l l}
+\toprule
+\textbf{Payload} & \textbf{Rule} & \textbf{Description} & \textbf{Response} & \textbf{Severity} \\
+\midrule
+\texttt{SELECT * FROM users} & WAF-001 & SQL Injection & 400 Blocked & HIGH \\
+\texttt{<script>alert(1)</script>} & WAF-002 & XSS & 400 Blocked & HIGH \\
+\texttt{; id} & WAF-004 & Command Injection & 400 Blocked & CRITICAL \\
+\texttt{hello} & — & Legitimate request & 200 Allowed & — \\
+35 req/min & Rate Limit & Excessive requests & 429 Blocked & MEDIUM \\
+\bottomrule
+\end{tabularx}
+\caption{WAF rule testing results}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/error_req.png}
+  \caption{WAF blocking attack payloads in real time}
+\end{figure}
+
+\subsection{Security Headers}
+
+\begin{lstlisting}[style=bashstyle, caption={Verifying security headers with curl}]
+curl -I http://127.0.0.1:5002/
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Header} & \textbf{Value} & \textbf{Attack Prevented} \\
+\midrule
+\texttt{X-Content-Type-Options} & \texttt{nosniff} & MIME sniffing attacks \\
+\texttt{X-Frame-Options} & \texttt{DENY} & Clickjacking \\
+\texttt{X-XSS-Protection} & \texttt{1; mode=block} & Reflected XSS (legacy browsers) \\
+\texttt{Content-Security-Policy} & \texttt{default-src 'self'} & XSS, data injection \\
+\bottomrule
+\end{tabularx}
+\caption{Security headers implemented by WAF middleware}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/ok_curl.png}
+  \caption{Security headers confirmed on normal request}
+\end{figure}
+
+\begin{infobox}
+\textbf{Connection to ZAP findings:} In Part 2, OWASP ZAP detected 6 missing security headers on the vulnerable app. The WAF middleware in Part 3 adds all of them — \texttt{X-Frame-Options}, \texttt{X-Content-Type-Options}, \texttt{Content-Security-Policy}, and \texttt{X-XSS-Protection} — demonstrating the complete defense-in-depth cycle from detection to remediation.
+\end{infobox}
+
+% ────────────────────────────────────────────────────────────────────────────
 \section{Incident Response Exercise}
-% Content to be added after completing Part 3
+% ────────────────────────────────────────────────────────────────────────────
 
+\subsection{Scenario — P1 Active SQL Injection Attack}
+
+\begin{warningbox}
+\textbf{Scenario:} 50 \texttt{WAF\_BLOCK HIGH} severity alerts received from IP \texttt{203.0.113.42} in under 2 seconds. The attacker is targeting the \texttt{/login} endpoint with automated SQL injection payloads.
+\end{warningbox}
+
+\subsection{Step 1 — Identify the Attacker IP from Structured Logs}
+
+The attack was simulated by sending 50 SQL injection requests with a spoofed IP header:
+
+\begin{lstlisting}[style=bashstyle, caption={Simulating the attack}]
+for i in $(seq 1 50); do
+  curl -s 'http://127.0.0.1:5002/login?username=admin%27+OR+%271%27%3D%271' \
+  -H "X-Forwarded-For: 203.0.113.42" > /dev/null
+done
+\end{lstlisting}
+
+The attacker IP was identified by parsing the structured JSON logs:
+
+\begin{lstlisting}[style=bashstyle, caption={Identifying attacker from WAF logs}]
+grep "WAF_BLOCK" security_events.log | python3 -c "
+import sys, json
+for line in sys.stdin:
+    if 'WAF_BLOCK' in line:
+        start = line.find('{')
+        if start != -1:
+            event = json.loads(line[start:])
+            print(f'Time: {event[\"timestamp\"]} | IP: {event[\"source_ip\"]} | Rule: {event[\"details\"][\"rule_name\"]}')
+" | head -5
+\end{lstlisting}
+
+\textbf{Result:}
+\begin{lstlisting}[style=httpstyle]
+Time: 2026-05-23T16:52:33.716761Z | IP: 203.0.113.42 | Rule: SQL Injection
+Time: 2026-05-23T16:52:33.741814Z | IP: 203.0.113.42 | Rule: SQL Injection
+Time: 2026-05-23T16:52:33.760351Z | IP: 203.0.113.42 | Rule: SQL Injection
+...
+Total: 30 WAF_BLOCK events from 203.0.113.42 in < 2 seconds
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/waf_block.png}
+  \caption{Attacker IP identified from structured WAF logs}
+\end{figure}
+
+\subsection{Step 2 — Block the Attacker IP}
+
+\begin{lstlisting}[style=bashstyle, caption={Blocking attacker at infrastructure level}]
+# Block IP using iptables
+sudo iptables -I INPUT -s 203.0.113.42 -j DROP
+
+# Verify rule was added
+sudo iptables -L INPUT -n | head -5
+\end{lstlisting}
+
+\textbf{Result:}
+\begin{lstlisting}[style=httpstyle]
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination
+DROP       all  --  203.0.113.42         0.0.0.0/0
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/iptable.png}
+  \caption{Attacker IP blocked at infrastructure level via iptables}
+\end{figure}
+
+\subsection{Step 3 — Rotate the SECRET\_KEY}
+
+\begin{lstlisting}[style=bashstyle, caption={Rotating SECRET\_KEY without downtime}]
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+echo "New SECRET_KEY: $SECRET_KEY"
+\end{lstlisting}
+
+\textbf{Result:}
+\begin{lstlisting}[style=httpstyle]
+New SECRET_KEY: dc75d2f9e910eeb7236e39bdd778e27cab2a3cdb260295d44a348e781a7f6bf0
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+    \includegraphics[width=0.9\textwidth]{pictures/secretkey.png}
+  \caption{SECRET\_KEY rotated as precautionary measure}
+\end{figure}
+
+\subsection{Step 4 — Incident Documentation}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Field} & \textbf{Details} \\
+\midrule
+Incident ID & IR-2026-001 \\
+Date & 2026-05-23 \\
+Severity & P1 — HIGH \\
+Status & RESOLVED \\
+\midrule
+First alert & 2026-05-23T16:52:33Z \\
+Last alert & 2026-05-23T16:52:34Z \\
+Duration & $<$ 2 seconds (automated attack) \\
+\midrule
+Attacker IP & 203.0.113.42 \\
+Target endpoint & \texttt{/login} \\
+Attack type & SQL Injection (WAF-001) \\
+Payload & \texttt{admin' OR '1'='1} \\
+Total attempts & 30 blocked by WAF \\
+\midrule
+Action 1 & Attacker IP identified from structured WAF logs \\
+Action 2 & IP blocked: \texttt{iptables -I INPUT -s 203.0.113.42 -j DROP} \\
+Action 3 & SECRET\_KEY rotated: \texttt{secrets.token\_hex(32)} \\
+Action 4 & Incident documented in \texttt{incident\_report.txt} \\
+\bottomrule
+\end{tabularx}
+\caption{Incident response documentation}
+\end{table}
+
+\subsection{Step 5 — Post-Mortem Recommendations}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{ID} & \textbf{Recommendation} \\
+\midrule
+R1 & Implement automatic IP blocking after 10 WAF\_BLOCK events from the same IP within 60 seconds \\
+R2 & Integrate WAF logs with a SIEM (Splunk/Elastic/Datadog) for real-time alerting and dashboards \\
+R3 & Add CAPTCHA to the \texttt{/login} endpoint to prevent automated credential stuffing \\
+R4 & Implement account lockout after 5 consecutive failed login attempts \\
+R5 & Deploy an IP reputation service to proactively block known malicious IP ranges \\
+R6 & Store \texttt{SECRET\_KEY} in a secrets vault (HashiCorp Vault / AWS SSM) — never in environment variables \\
+R7 & Enable \texttt{fail2ban} to automate IP blocking based on WAF log patterns \\
+\bottomrule
+\end{tabularx}
+\caption{Post-mortem security recommendations}
+\end{table}
 % ════════════════════════════════════════════════════════════════════════════
 \chapter{Conclusion}
 % ════════════════════════════════════════════════════════════════════════════
 
+This lab provided a comprehensive hands-on journey through the complete DevSecOps lifecycle — from identifying and exploiting vulnerabilities, to automating security testing, to hardening a production deployment and responding to live attacks.
+
+\section{Summary of Achievements}
+
+\textbf{Part 1 — Build \& Break} demonstrated that the most critical web vulnerabilities are not theoretical — they are trivially exploitable in real applications. SQL injection bypassed authentication in seconds, XSS executed arbitrary JavaScript in the victim's browser, command injection gave full OS access, and path traversal exposed the application's own source code. Each vulnerability was then remediated in \texttt{app\_secure.py} following the principle of \textbf{never trusting user input}.
+
+\textbf{Part 2 — Test \& Automate} proved that manual security testing is not enough. Bandit eliminated 100\% of HIGH and MEDIUM severity findings automatically. Safety identified 10 real CVEs in production dependencies. Gitleaks detected hardcoded secrets in git history. OWASP ZAP revealed missing security headers. GitHub Actions tied all these tools into a CI/CD pipeline that \textbf{blocks insecure code from being merged} — making security a continuous, automated practice rather than a one-time gate.
+
+\textbf{Part 3 — Harden \& Monitor} showed that application-level security is not enough on its own. Docker hardening following CIS Benchmark guidelines ensures that even a compromised container cannot escalate privileges or persist malware. The WAF middleware provided runtime protection, detecting and blocking SQL injection, XSS, and command injection payloads in real time. The incident response exercise demonstrated a complete P1 response workflow: detect, contain, rotate credentials, document, and prevent recurrence.
+
+\section{Key Lessons Learned}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Lesson} & \textbf{Detail} \\
+\midrule
+Never trust user input & Every vulnerability in Part 1 came from unsanitized input \\
+Shift security left & Catching bugs at commit time costs far less than in production \\
+Defense in depth & No single control is sufficient — layer SAST, SCA, WAF, hardening \\
+False positives are real & Gitleaks, ZAP, and pytest all produced false positives requiring tuning \\
+Environment matters & WSL2 behaves differently from production Linux — test on real hardware \\
+Secrets must be vaulted & Hardcoded secrets are found instantly by automated scanners \\
+Logs enable response & Structured JSON logs made attacker identification trivial \\
+\bottomrule
+\end{tabularx}
+\caption{Key security lessons from the lab}
+\end{table}
+
+\section{DevSecOps Workflow Completed}
+
+The complete DevSecOps cycle was demonstrated end-to-end:
+
+\begin{enumerate}[leftmargin=1.5cm]
+  \item \textbf{Model} — STRIDE threat modeling identified 8 threats before writing any code
+  \item \textbf{Code} — Secure implementation applied parameterized queries, safe\_join, template escaping
+  \item \textbf{Scan} — Bandit, Safety, and Gitleaks caught vulnerabilities and secrets automatically
+  \item \textbf{Test} — pytest security tests validated that attacks are blocked by the secure app
+  \item \textbf{Release} — GitHub Actions pipeline enforced security gates on every push
+  \item \textbf{Deploy} — CIS-hardened Docker container minimized the production attack surface
+  \item \textbf{Monitor} — WAF middleware detected and blocked live attacks at runtime
+  \item \textbf{Respond} — Incident response runbook handled a P1 SQL injection attack in under 5 minutes
+\end{enumerate}
+
+\section{Known Limitations and Future Work}
+
+Several limitations were encountered during the lab that would need to be addressed in a real production environment:
+
+\begin{itemize}[leftmargin=1.5cm]
+  \item \textbf{WSL2 constraints:} Custom seccomp profiles, network namespace isolation, and some Docker security options are not fully supported on WSL2. A production deployment on native Linux would enable these controls.
+  \item \textbf{gunicorn path issue:} The multi-stage Dockerfile's package path resolution failed on WSL2. A production fix would use a single-stage build with system-wide installation or a properly configured virtual environment.
+  \item \textbf{WAF as middleware:} \texttt{security\_monitoring.py} runs as a standalone app rather than integrated middleware. A production WAF should be integrated at the nginx/reverse proxy level for zero-downtime enforcement.
+  \item \textbf{CSRF protection:} The secure app does not implement CSRF tokens. A production Flask app should use \texttt{Flask-WTF} for CSRF protection on all form endpoints.
+  \item \textbf{HTTPS:} The lab ran on HTTP. All production deployments must enforce HTTPS with valid TLS certificates and HSTS headers.
+\end{itemize}
+
+\section{Final Remarks}
+
+This lab reinforced that security is not a product — it is a continuous process. The tools and techniques demonstrated here reflect real-world industry practices used by security engineering teams at major organizations. The complete pipeline from threat modeling to incident response, automated and reproducible, is the foundation of a mature DevSecOps program.
+
 \begin{infobox}
-\textbf{Note:} Conclusion to be written after completing all three parts of the lab.
+\textbf{Repository:} The complete lab code, fixed pipeline, and this report are available at:\\
+\url{https://github.com/Mossaab49/DevSecOps}\\[4pt]
+All problems encountered during the lab, along with their exact fixes, are documented in this report to help future students avoid the same issues.
 \end{infobox}
 
 % ════════════════════════════════════════════════════════════════════════════

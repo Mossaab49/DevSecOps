@@ -163,7 +163,7 @@ def create_monitored_app():
 
     @app.before_request
     def security_middleware():
-        ip = request.remote_addr or "unknown"
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
         path = request.path
 
         # 1. Rate limiting (global)
@@ -233,7 +233,7 @@ def create_monitored_app():
                 SecurityEvent(
                     "SLOW_REQUEST", "LOW",
                     {"path": request.path, "duration_ms": round(duration_ms, 2)},
-                    request.remote_addr
+                    request.headers.get("X-Forwarded-For", request.remote_addr)
                 ).log()
 
         return response
