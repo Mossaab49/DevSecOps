@@ -169,7 +169,11 @@ jobs:
 
       - name: Build Docker image
         if: steps.check_docker.outputs.exists == 'true'
-        run: docker build -t lab-app:${{ github.sha }} -f part3/Dockerfile .
+        run: |
+          cp part1/app_secure.py part3/
+          cp requirements.txt part3/
+          cp -r part1/templates part3/ 2>/dev/null || mkdir -p part3/templates
+          docker build -t lab-app:${{ github.sha }} -f part3/Dockerfile part3/
 
       - name: Run Trivy container scan
         if: steps.check_docker.outputs.exists == 'true'
